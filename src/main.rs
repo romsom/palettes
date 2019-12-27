@@ -1,5 +1,7 @@
 extern crate sdl2; 
 
+mod color_cycling;
+
 use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
