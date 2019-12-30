@@ -1,6 +1,7 @@
 extern crate sdl2; 
 
 mod color_cycling;
+mod iff;
 
 use sdl2::pixels::Color;
 use sdl2::event::Event;
