@@ -3,46 +3,27 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::fmt;
-//use std::default::Default;
 
-// pub struct IFF_GenericChunk {
-// 	pub chunk_type: String,
-// 	pub data: Vec<u8>, // TODO: reference to other memory
-// 	pub sub_chunks: Vec<IFFChunk>,
-// 	pub fourcc: Option<String>,
-// 	pub enumeration_complete: bool,
-// 	pub chunk_number: Option<usize>,
-// }
-
-// pub struct IFF_FORM {
-// 	pub chunk_type: String,
-// 	pub fourcc: String,
-// 	pub sub_chunks: Vec<IFFChunk>,
-// }
 #[derive(Debug)]
-pub enum IFF_Container {
-		IFF_FORM {
+pub enum Container {
+		FORM {
 			fourcc: String,
 		}
 }
-// pub struct IFFContainer {
-// 	sub_chunks: Vec<IFFChunk>,
-// 	container: IFF_Container,
-// }
 
 #[derive(Debug)]
-pub enum IFF_ChunkContent {
-		IFF_GenericChunk { data : Vec<u8> },
-		IFF_Container {
+pub enum ChunkContent {
+		GenericChunk { data : Vec<u8> },
+		Container {
 			sub_chunks: Vec<IFFChunk>,
-			container: IFF_Container,
+			container: Container,
 		},
-		IFF_BMHD,
-		IFF_CMAP,
-		IFF_DPPS,
-		IFF_CRNG,
-		IFF_TINY,
-		IFF_BODY
+		BMHD,
+		CMAP,
+		DPPS,
+		CRNG,
+		TINY,
+		BODY,
 }
 
 #[derive(Debug)]
@@ -51,7 +32,7 @@ pub struct IFFChunk {
 	pub size: usize,
 	pub enumeration_complete: bool,
 	pub chunk_number: Option<usize>,
-	pub data: IFF_ChunkContent,
+	pub data: ChunkContent,
 }
 
 impl IFFChunk {
@@ -77,65 +58,65 @@ impl IFFChunk {
 	}
 
 	fn parse(bytes: & [u8]) -> (IFFChunk, usize) {
-		// initialize fixed size array from slice
+		// TODO initialize fixed size array from slice
 
+		// parse chunk type
 		let header_size : usize;// = 8;
 		let mut chunk_tmp : [u8; 4] = [0, 0, 0, 0];
 		chunk_tmp.copy_from_slice(&bytes[..4]);
 		let chunk_type = IFFChunk::parse_4_bytes(chunk_tmp);
 
+		// parse chunk length
 		let mut data_size_bytes : [u8; 4] = Default::default();
 		data_size_bytes.copy_from_slice(&bytes[4..8]);
 		let mut data_size : usize = u32_from_be_bytes(data_size_bytes) as usize;
 
-		let fourcc =
-			if chunk_type == "FORM" && data_size >= 4 {
-				let mut fourcc_tmp : [u8; 4] = [0, 0, 0, 0];
-				fourcc_tmp.copy_from_slice(&bytes[8..12]);
-				Some(IFFChunk::parse_4_bytes(fourcc_tmp))
-			} else {
-				None
-			};
-
-		//print!("Found chunk with type: {}\n", chunk_type);
-		match & fourcc {
-			Some(fourcc_str) => {
+		// special case for FORM chunk
+		if chunk_type == "FORM" && data_size >= 4 {
 				header_size = 12;
 				data_size -= 4;
-				//print!("Chunk fourcc: {}\n", fourcc_str)
-			},
-			None => {
-				header_size = 8;
-				()
-			}
+		} else {
+			header_size = 8;
 		}
-		//print!("Chunk size {}\n", data_size);
 
+		//print!("Found chunk with type: {}\n", chunk_type);
+		//print!("Chunk size {}\n", data_size);
 		//print!("Remaining bytes: {}\n", bytes.len());
 
-		let mut data : Vec<u8> = Vec::with_capacity(data_size);
-		// fill data with zeros
-		data.resize_with(data_size, Default::default);
+		// read data bytes
+		let mut data_bytes : Vec<u8> = Vec::with_capacity(data_size);
+		// initially fill data with zeros
+		data_bytes.resize_with(data_size, Default::default);
 		if header_size + data_size <= bytes.len() {
-			data.copy_from_slice(&bytes[header_size..header_size+data_size]);
+			data_bytes.copy_from_slice(&bytes[header_size..header_size+data_size]);
 		} else {
-			data.copy_from_slice(&bytes[header_size..]);
-			// print!("Truncated chunk: there were only {} bytes where there should have been {}\n",
-			//	   bytes.len() - header_size,
-			//	   data_size);
+			data_bytes.copy_from_slice(&bytes[header_size..]);
+			print!("Truncated chunk: there were only {} bytes where there should have been {}\n",
+				   bytes.len() - header_size,
+				   data_size);
 		}
+
+
+		// create data field depending on chunk type
+		
 		let data = if chunk_type == "FORM" {
+			// read fourcc field
+			let mut fourcc_tmp : [u8; 4] = [0, 0, 0, 0];
+			fourcc_tmp.copy_from_slice(&bytes[8..12]);
+			// parse subchunks
 			let mut sub_chunks : Vec<IFFChunk> = Vec::new();
-			IFFChunk::find_chunks(& data, & mut sub_chunks);
-			IFF_ChunkContent::IFF_Container {
+			IFFChunk::find_chunks(& data_bytes, & mut sub_chunks);
+			// build struct
+			ChunkContent::Container {
 				sub_chunks : sub_chunks,
-				container : IFF_Container::IFF_FORM {
-					fourcc : fourcc.unwrap()
+				container : Container::FORM {
+					fourcc : IFFChunk::parse_4_bytes(fourcc_tmp),
 				}
 			}
+			// TODO add more specific chunk types
 		} else {
-			IFF_ChunkContent::IFF_GenericChunk {
-				data : data
+			ChunkContent::GenericChunk {
+				data : data_bytes
 			}
 		};
 
@@ -175,8 +156,8 @@ impl IFFChunk {
 			let mut next = next_index;
 			// recurse over children if any
 			match & mut c.data {
-				IFF_ChunkContent::IFF_Container {sub_chunks : sub_chunks, .. } => {
-					for sc in sub_chunks {
+				ChunkContent::Container {sub_chunks : scs, .. } => {
+					for sc in scs {
 						next = IFFChunk::enumerate_rec(sc, next, level - 1);
 					}
 				},

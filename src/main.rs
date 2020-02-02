@@ -19,7 +19,7 @@ pub fn print_chunks(cs : & Vec<iff::IFFChunk>, level: usize) {
 		}
 		print!("{}\n", chunk);
 		match & chunk.data {
-			iff::IFF_ChunkContent::IFF_Container { sub_chunks, .. } => print_chunks(& sub_chunks, level + 1),
+			iff::ChunkContent::Container { sub_chunks, .. } => print_chunks(& sub_chunks, level + 1),
 			_ => ()
 		}
 	}
