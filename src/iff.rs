@@ -6,24 +6,56 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum Container {
-		FORM {
-			fourcc: String,
-		}
+	FORM {
+		fourcc: String,
+	}
 }
 
 #[derive(Debug)]
 pub enum ChunkContent {
-		GenericChunk { data : Vec<u8> },
-		Container {
-			sub_chunks: Vec<IFFChunk>,
-			container: Container,
-		},
-		BMHD,
-		CMAP,
-		DPPS,
-		CRNG,
-		TINY,
-		BODY,
+	GenericChunk { data : Vec<u8> },
+	Container {
+		sub_chunks: Vec<IFFChunk>,
+		container: Container,
+	},
+	BMHD {
+		width: u16,
+		height: u16,
+		x_origin: i16,
+		y_origin: i16,
+		n_planes: u8,
+		mask: u8,
+		compression: u8,
+		// pad1: u8,
+		transparent_color: u16,
+		x_aspect: u8,
+		y_aspect: u8,
+		page_width: i16,
+		page_height: i16,
+	},
+	CMAP {
+		n_colors: u8,
+		colors: Vec<(u8, u8, u8)>
+	},
+	DPPS,
+	CRNG,
+	TINY,
+	BODY,
+}
+
+impl fmt::Display for ChunkContent {
+	fn fmt(&self, f : & mut fmt::Formatter) -> fmt::Result {
+		match self {
+			ChunkContent::BMHD { .. } => fmt::Debug::fmt(self, f),
+			ChunkContent::GenericChunk { .. } => write!(f, "GenericChunk {{ data }}"),
+			ChunkContent::Container { .. } => write!(f, "Container {{ .. }}"),
+			ChunkContent::CMAP { .. } => write!(f, "CMAP {{ .. }}"),
+			ChunkContent::DPPS { .. } => write!(f, "DPPS {{ .. }}"),
+			ChunkContent::CRNG { .. } => write!(f, "CRNG {{ .. }}"),
+			ChunkContent::TINY { .. } => write!(f, "TINY {{ .. }}"),
+			ChunkContent::BODY { .. } => write!(f, "BODY {{ .. }}"),
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -113,6 +145,23 @@ impl IFFChunk {
 					fourcc : IFFChunk::parse_4_bytes(fourcc_tmp),
 				}
 			}
+		} else if chunk_type == "BMHD" { // bitmap header
+
+			ChunkContent::BMHD {
+				width: u16_from_be_bytes([data_bytes[0], data_bytes[1]]),
+				height: u16_from_be_bytes([data_bytes[2], data_bytes[3]]),
+				x_origin: i16_from_be_bytes([data_bytes[4], data_bytes[5]]),
+				y_origin: i16_from_be_bytes([data_bytes[6], data_bytes[7]]),
+				n_planes: data_bytes[8],
+				mask: data_bytes[9],
+				compression: data_bytes[10],
+				// pad1: u8 = data_bytes[11],
+				transparent_color: u16_from_be_bytes([data_bytes[12], data_bytes[13]]),
+				x_aspect: data_bytes[14],
+				y_aspect: data_bytes[15],
+				page_width: i16_from_be_bytes([data_bytes[16], data_bytes[17]]),
+				page_height: i16_from_be_bytes([data_bytes[18], data_bytes[19]]),
+			}
 			// TODO add more specific chunk types
 		} else {
 			ChunkContent::GenericChunk {
@@ -173,7 +222,7 @@ impl IFFChunk {
 
 impl std::fmt::Display for IFFChunk {
 	fn fmt(&self, f : & mut fmt::Formatter) -> fmt::Result {
-		write!(f, "Chunk {}, Type: {}, Size {}", self.chunk_number.unwrap(), self.chunk_type, self.size)
+		write!(f, "Chunk {}, Type: {}, Size: {}, Content: {}", self.chunk_number.unwrap(), self.chunk_type, self.size, self.data)
 	}
 }
 
@@ -211,4 +260,12 @@ impl IFFFile {
 
 fn u32_from_be_bytes(bytes: [u8; 4]) -> u32 {
 	bytes[3] as u32 + ((bytes[2] as u32) << 8) + ((bytes[1] as u32) << 16) + ((bytes[0] as u32) << 24)
+}
+
+fn u16_from_be_bytes(bytes: [u8; 2]) -> u16 {
+	((bytes[0] as u16) << 8) + (bytes[1] as u16)
+}
+
+fn i16_from_be_bytes(bytes: [u8; 2]) -> i16 {
+	((bytes[0] as i16) << 8) + (bytes[1] as i16)
 }
