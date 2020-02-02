@@ -5,14 +5,53 @@ use std::path::Path;
 use std::fmt;
 //use std::default::Default;
 
+// pub struct IFF_GenericChunk {
+// 	pub chunk_type: String,
+// 	pub data: Vec<u8>, // TODO: reference to other memory
+// 	pub sub_chunks: Vec<IFFChunk>,
+// 	pub fourcc: Option<String>,
+// 	pub enumeration_complete: bool,
+// 	pub chunk_number: Option<usize>,
+// }
+
+// pub struct IFF_FORM {
+// 	pub chunk_type: String,
+// 	pub fourcc: String,
+// 	pub sub_chunks: Vec<IFFChunk>,
+// }
+#[derive(Debug)]
+pub enum IFF_Container {
+		IFF_FORM {
+			fourcc: String,
+		}
+}
+// pub struct IFFContainer {
+// 	sub_chunks: Vec<IFFChunk>,
+// 	container: IFF_Container,
+// }
+
+#[derive(Debug)]
+pub enum IFF_ChunkContent {
+		IFF_GenericChunk { data : Vec<u8> },
+		IFF_Container {
+			sub_chunks: Vec<IFFChunk>,
+			container: IFF_Container,
+		},
+		IFF_BMHD,
+		IFF_CMAP,
+		IFF_DPPS,
+		IFF_CRNG,
+		IFF_TINY,
+		IFF_BODY
+}
+
 #[derive(Debug)]
 pub struct IFFChunk {
 	pub chunk_type: String,
-	pub data: Vec<u8>, // TODO: reference to other memory
-	pub sub_chunks: Vec<IFFChunk>,
-	pub fourcc: Option<String>,
+	pub size: usize,
 	pub enumeration_complete: bool,
 	pub chunk_number: Option<usize>,
+	pub data: IFF_ChunkContent,
 }
 
 impl IFFChunk {
@@ -85,11 +124,28 @@ impl IFFChunk {
 			//	   bytes.len() - header_size,
 			//	   data_size);
 		}
-		let mut sub_chunks : Vec<IFFChunk> = Vec::new();
-		if chunk_type == "FORM" {
+		let data = if chunk_type == "FORM" {
+			let mut sub_chunks : Vec<IFFChunk> = Vec::new();
 			IFFChunk::find_chunks(& data, & mut sub_chunks);
-		}
-		(IFFChunk { chunk_type: chunk_type, data: data, sub_chunks : sub_chunks, fourcc : fourcc, enumeration_complete: false, chunk_number: None }, 8 + data_size)
+			IFF_ChunkContent::IFF_Container {
+				sub_chunks : sub_chunks,
+				container : IFF_Container::IFF_FORM {
+					fourcc : fourcc.unwrap()
+				}
+			}
+		} else {
+			IFF_ChunkContent::IFF_GenericChunk {
+				data : data
+			}
+		};
+
+		(IFFChunk {
+			chunk_type: chunk_type,
+			size: data_size,
+			enumeration_complete: false,
+			chunk_number: None,
+			data: data,
+		}, header_size + data_size)
 	}
 
 	// enumerate chunks bredth-first
@@ -117,8 +173,14 @@ impl IFFChunk {
 			next_index + 1
 		} else {
 			let mut next = next_index;
-			for sc in & mut c.sub_chunks {
-				next = IFFChunk::enumerate_rec(sc, next, level - 1);
+			// recurse over children if any
+			match & mut c.data {
+				IFF_ChunkContent::IFF_Container {sub_chunks : sub_chunks, .. } => {
+					for sc in sub_chunks {
+						next = IFFChunk::enumerate_rec(sc, next, level - 1);
+					}
+				},
+				_ => (),
 			}
 			if next_index == next {
 				c.enumeration_complete = true;
@@ -130,7 +192,7 @@ impl IFFChunk {
 
 impl std::fmt::Display for IFFChunk {
 	fn fmt(&self, f : & mut fmt::Formatter) -> fmt::Result {
-		write!(f, "Chunk {}, Type: {}, Size {}", self.chunk_number.unwrap(), self.chunk_type, self.data.len())
+		write!(f, "Chunk {}, Type: {}, Size {}", self.chunk_number.unwrap(), self.chunk_type, self.size)
 	}
 }
 

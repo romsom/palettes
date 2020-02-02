@@ -10,18 +10,24 @@ use std::time::Duration;
 
 use std::path::Path;
 
-pub fn print_chunks(cs : & Vec<iff::IFFChunk>) {
+pub fn print_chunks(cs : & Vec<iff::IFFChunk>, level: usize) {
 	// recurse
 	for chunk in cs.iter() {
 		//print!("Chunk {}: Type: {}\n", chunk.chunk_number.unwrap(), chunk.chunk_type);
+		for _ in 0..level {
+			print!(" ")
+		}
 		print!("{}\n", chunk);
-		print_chunks(& chunk.sub_chunks);
+		match & chunk.data {
+			iff::IFF_ChunkContent::IFF_Container { sub_chunks, .. } => print_chunks(& sub_chunks, level + 1),
+			_ => ()
+		}
 	}
 }
 
 pub fn main() {
 	let iff_file = iff::IFFFile::read_from_file(Path::new("./V08AM.LBM"));
-	print_chunks(& iff_file.chunks);
+	print_chunks(& iff_file.chunks, 0);
 
 
 	let sdl_context = sdl2::init().unwrap();
