@@ -49,11 +49,24 @@ impl fmt::Display for ChunkContent {
 			ChunkContent::BMHD { .. } => fmt::Debug::fmt(self, f),
 			ChunkContent::CMAP { .. } => fmt::Debug::fmt(self, f), //write!(f, "CMAP {{ .. }}"),
 			ChunkContent::GenericChunk { .. } => write!(f, "GenericChunk {{ data }}"),
-			ChunkContent::Container { .. } => write!(f, "Container {{ .. }}"),
+			ChunkContent::Container { container, .. } => {
+				write!(f, "Container {{ ").and(
+					fmt::Display::fmt(container, f).and(
+						write!(f, "}}")))
+			},
+			// ChunkContent::Container { .. } => fmt::Debug::fmt(self, f),
 			ChunkContent::DPPS { .. } => write!(f, "DPPS {{ .. }}"),
 			ChunkContent::CRNG { .. } => write!(f, "CRNG {{ .. }}"),
 			ChunkContent::TINY { .. } => write!(f, "TINY {{ .. }}"),
 			ChunkContent::BODY { .. } => write!(f, "BODY {{ .. }}"),
+		}
+	}
+}
+
+impl fmt::Display for Container {
+	fn fmt(&self, f : & mut fmt::Formatter) -> fmt::Result {
+		match self {
+			Container::FORM { fourcc } => write!(f, "FORM {{ fourcc: {} }}", fourcc),
 		}
 	}
 }
@@ -165,10 +178,11 @@ impl IFFChunk {
 		} else if chunk_type == "CMAP" {
 			let n_colors = data_size / 3;
 			// print!("Found CMAP with {} colors.\n", data_size / 3);
-			let mut colors = Vec::<(u8, u8, u8)>::with_capacity(data_size / 3);
-			for i in 0..n_colors {
-				colors.push((data_bytes[3*i], data_bytes[3*i+1], data_bytes[3*i+2]));
-			}
+			let colors = (0..n_colors).map(|i| (data_bytes[3*i], data_bytes[3*i+1], data_bytes[3*i+2])).collect::<Vec::<(u8, u8, u8)>>();
+			// let mut colors = Vec::<(u8, u8, u8)>::with_capacity(data_size / 3);
+			// for i in 0..n_colors {
+			// 	colors.push((data_bytes[3*i], data_bytes[3*i+1], data_bytes[3*i+2]));
+			// }
 			ChunkContent::CMAP {
 				n_colors: n_colors,
 				colors: colors,
