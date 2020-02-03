@@ -34,7 +34,7 @@ pub enum ChunkContent {
 		page_height: i16,
 	},
 	CMAP {
-		n_colors: u8,
+		n_colors: usize,
 		colors: Vec<(u8, u8, u8)>
 	},
 	DPPS,
@@ -47,9 +47,9 @@ impl fmt::Display for ChunkContent {
 	fn fmt(&self, f : & mut fmt::Formatter) -> fmt::Result {
 		match self {
 			ChunkContent::BMHD { .. } => fmt::Debug::fmt(self, f),
+			ChunkContent::CMAP { .. } => fmt::Debug::fmt(self, f), //write!(f, "CMAP {{ .. }}"),
 			ChunkContent::GenericChunk { .. } => write!(f, "GenericChunk {{ data }}"),
 			ChunkContent::Container { .. } => write!(f, "Container {{ .. }}"),
-			ChunkContent::CMAP { .. } => write!(f, "CMAP {{ .. }}"),
 			ChunkContent::DPPS { .. } => write!(f, "DPPS {{ .. }}"),
 			ChunkContent::CRNG { .. } => write!(f, "CRNG {{ .. }}"),
 			ChunkContent::TINY { .. } => write!(f, "TINY {{ .. }}"),
@@ -161,6 +161,17 @@ impl IFFChunk {
 				y_aspect: data_bytes[15],
 				page_width: i16_from_be_bytes([data_bytes[16], data_bytes[17]]),
 				page_height: i16_from_be_bytes([data_bytes[18], data_bytes[19]]),
+			}
+		} else if chunk_type == "CMAP" {
+			let n_colors = data_size / 3;
+			// print!("Found CMAP with {} colors.\n", data_size / 3);
+			let mut colors = Vec::<(u8, u8, u8)>::with_capacity(data_size / 3);
+			for i in 0..n_colors {
+				colors.push((data_bytes[3*i], data_bytes[3*i+1], data_bytes[3*i+2]));
+			}
+			ChunkContent::CMAP {
+				n_colors: n_colors,
+				colors: colors,
 			}
 			// TODO add more specific chunk types
 		} else {
