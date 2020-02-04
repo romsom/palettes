@@ -38,9 +38,20 @@ pub enum ChunkContent {
 		colors: Vec<(u8, u8, u8)>
 	},
 	DPPS,
-	CRNG,
+	CRNG {
+		rate: i16,
+		flags: u16,
+		active: bool,
+		cycle_downwards: bool,
+		low: u8,
+		high: u8,
+	},
 	TINY,
-	BODY,
+	BODY {
+		raw_data: Vec<u8>,
+		decompressed_data: Option<Vec<u8>>,
+		pixel_data: Option<Vec<u8>>
+	},
 }
 
 impl fmt::Display for ChunkContent {
@@ -48,6 +59,7 @@ impl fmt::Display for ChunkContent {
 		match self {
 			ChunkContent::BMHD { .. } => fmt::Debug::fmt(self, f),
 			ChunkContent::CMAP { .. } => fmt::Debug::fmt(self, f), //write!(f, "CMAP {{ .. }}"),
+			ChunkContent::CRNG { .. } => fmt::Debug::fmt(self, f),
 			ChunkContent::GenericChunk { .. } => write!(f, "GenericChunk {{ data }}"),
 			ChunkContent::Container { container, .. } => {
 				write!(f, "Container {{ ").and(
@@ -56,7 +68,6 @@ impl fmt::Display for ChunkContent {
 			},
 			// ChunkContent::Container { .. } => fmt::Debug::fmt(self, f),
 			ChunkContent::DPPS { .. } => write!(f, "DPPS {{ .. }}"),
-			ChunkContent::CRNG { .. } => write!(f, "CRNG {{ .. }}"),
 			ChunkContent::TINY { .. } => write!(f, "TINY {{ .. }}"),
 			ChunkContent::BODY { .. } => write!(f, "BODY {{ .. }}"),
 		}
@@ -186,6 +197,23 @@ impl IFFChunk {
 			ChunkContent::CMAP {
 				n_colors: n_colors,
 				colors: colors,
+			}
+		} else if chunk_type == "CRNG" {
+			// data_bytes[0..2]: padding
+			let flags = u16_from_be_bytes([data_bytes[4], data_bytes[5]]);
+			ChunkContent::CRNG {
+				rate: i16_from_be_bytes([data_bytes[2], data_bytes[3]]),
+				flags: flags,
+				active: (flags & 0x1) != 0,
+				cycle_downwards: (flags & 0x2) != 0,
+				low: data_bytes[6],
+				high: data_bytes[7],
+			}
+		} else if chunk_type == "BODY" {
+			ChunkContent::BODY {
+				raw_data: data_bytes,
+				decompressed_data: None,
+				pixel_data: None,
 			}
 			// TODO add more specific chunk types
 		} else {
