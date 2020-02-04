@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::fmt;
+use std::mem;
 
 #[derive(Debug)]
 pub enum Container {
@@ -271,6 +272,99 @@ impl IFFChunk {
 			next
 		}
 	}
+
+	fn decompress_body(data: & Vec<u8>, dest: & mut Vec<u8>) {
+		// row end is a compression boundary
+		let mut i: usize = 0;
+		loop {
+			if i >= data.len() {
+				break;
+			}
+			
+			if data[i] == 0x80 { // NOP
+				i += 1;
+			} else if data[i] < 0x80 { // data[i] different bytes
+				let next_i = i + (data[i] as usize) + 1;
+				for j in i+1..next_i {
+					dest.push(data[j])
+				}
+				i = next_i;
+			} else { // same byte data[i] - 0x80 times
+				let n : usize = (data[i] as usize) - 0x80;
+				for _ in 0..n {
+					dest.push(data[i+1])
+				}
+				i += n + 1
+			}
+		}
+	}
+
+	fn decode_body(data: & Vec<u8>, dest: &mut Vec<u8>, n_pixel_planes: u8, mask_plane: bool) {
+		assert!(n_pixel_planes <= 8); // could potentially be more, but we assume the resulting index to be a u8
+		let mut i = 0;
+		let n_planes = if mask_plane {
+			(n_pixel_planes + 1) as usize
+		} else {
+			n_pixel_planes as usize
+		};
+		loop {
+			// i is the next unused index
+			for _ in 0..8 {
+				dest.push(0);
+			}
+			// i .. i + width - 1 are now valid indices
+			for plane_index in 0..n_pixel_planes as usize {
+				let mut plane : u8 = data[(i * n_planes) + plane_index];
+				for pixel in 0..8 {
+					//let bit : u8 = (data[(i * n_planes) + plane_index] >> pixel) & 0x1;
+					//dest[(i * 8) + pixel] |= bit << plane_index;
+
+					dest[(i * 8) + pixel] |= (plane & 0x1) << plane_index;
+					plane >>= 1;
+				}
+			}
+			
+			i += 1;
+		}
+	}
+
+	pub fn prepare_body(mut self, bmhd: & IFFChunk) -> Result<Self, & 'static str> {
+		match self.data {
+			ChunkContent::BODY { raw_data, decompressed_data, pixel_data } => {
+				match bmhd.data {
+					ChunkContent::BMHD { n_planes, mask, .. } => {
+
+						let decompress_buffer = match decompressed_data {
+							None => {
+								let mut decompress_buffer = Vec::<u8>::new();
+								IFFChunk::decompress_body(& raw_data, & mut decompress_buffer);
+								decompress_buffer
+							}
+							Some(decompressed) => decompressed
+						};
+
+						let pixel_buffer = match pixel_data {
+							None => {
+								let mut pixel_buffer = Vec::<u8>::new();
+								IFFChunk::decode_body(& decompress_buffer, & mut pixel_buffer, n_planes, (mask & 0x1) != 0);
+								pixel_buffer
+							},
+							Some(pixels) => pixels
+						};
+						
+						self.data = ChunkContent::BODY {
+							raw_data: raw_data,
+							decompressed_data: Some(decompress_buffer),
+							pixel_data: Some(pixel_buffer)
+						};
+						Ok(self)
+					},
+					_ => Err("bmhd must be of type BMHD (bitmap header)")
+				}
+			},
+			_ => Err("Chunk must be of type BODY to call this function on.")
+		}
+	}
 }
 
 impl std::fmt::Display for IFFChunk {
@@ -305,9 +399,42 @@ impl IFFFile {
 		let mut chunks = Vec::<IFFChunk>::new();
 		IFFChunk::find_chunks(& bytes, & mut chunks);
 		IFFChunk::enumerate(& mut chunks);
+		let bmhd_addr = IFFFile::find_chunk(& mut chunks, & String::from("BMHD")).unwrap();
+		let body_addr = IFFFile::find_chunk(& mut chunks, & String::from("BODY")).unwrap();
+		print!("{:?}\n", bmhd_addr);
+		print!("{:?}\n", body_addr);
 		IFFFile {
 			chunks: chunks
 		}
+	}
+
+	// find first matching chunk if any
+	pub fn find_chunk(chunks: & Vec<IFFChunk>, chunk_type: & String) -> Result<Vec<usize>, & 'static str> {
+		for (i, ch) in chunks.iter().enumerate() {
+			if & ch.chunk_type == chunk_type {
+				return Ok(vec![i])
+			} else {
+				match & ch.data {
+					ChunkContent::Container { sub_chunks, .. } => {
+						match IFFFile::find_chunk( & sub_chunks, & chunk_type) {
+							Ok(mut ch) => {
+								ch.insert(0, i);
+								return Ok(ch);
+							}
+							_ => ()
+						}
+					},
+					_ => ()
+				}
+			}
+		}
+		Err("No chunk with matching type was found.")
+	}
+
+	pub fn update_body(chunks: Vec<IFFChunk>, bmhd_addr: Vec<usize>, body_addr: Vec<usize>) -> Vec<IFFChunk> {
+		// This approach does not work unless both Vecs have exactly the same length, i.e. bmhd and body lie in the same container (which probably is the case in most if not all cases, but it's not a general solution)
+		// I have to rethink this and find a way to modify existing structures
+		chunks
 	}
 }
 
